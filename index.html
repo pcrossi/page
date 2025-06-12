@@ -1,11 +1,246 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-br">
 <head>
-  <meta charset="UTF-8">
-  <title>Minha Página</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jogo da Vida de Conway</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        canvas {
+            cursor: pointer;
+            border: 1px solid #e2e8f0; /* slate-200 */
+        }
+    </style>
 </head>
-<body>
-  <h1>Funcionou!</h1>
-  <p>GitHub Pages está online.</p>
+<body class="bg-slate-50 text-slate-800 flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-4xl mx-auto">
+        <div class="bg-white p-6 sm:p-8 rounded-2xl shadow-lg text-center">
+            <h1 class="text-3xl sm:text-4xl font-bold text-slate-900 mb-2">Jogo da Vida de Conway</h1>
+            <p class="text-slate-600 mb-6">Uma simulação de autômato celular criada por John Conway.</p>
+
+            <!-- Controles do Jogo -->
+            <div class="flex flex-wrap items-center justify-center gap-3 mb-6">
+                <button id="startButton" class="px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-75 transition-transform transform hover:scale-105">Iniciar</button>
+                <button id="stopButton" class="px-5 py-2.5 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-opacity-75 transition-transform transform hover:scale-105">Parar</button>
+                <button id="resetButton" class="px-5 py-2.5 bg-slate-500 text-white font-semibold rounded-lg shadow-md hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-opacity-75 transition-transform transform hover:scale-105">Limpar</button>
+                <button id="randomButton" class="px-5 py-2.5 bg-teal-500 text-white font-semibold rounded-lg shadow-md hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-opacity-75 transition-transform transform hover:scale-105">Aleatório</button>
+            </div>
+
+            <!-- Canvas e Geração -->
+            <div class="mb-6 flex justify-center">
+                 <p class="text-lg font-medium text-slate-700">Geração: <span id="generationCounter" class="font-bold text-slate-900">0</span></p>
+            </div>
+           
+            <div class="w-full flex justify-center">
+                 <canvas id="gameCanvas" class="rounded-lg bg-slate-100"></canvas>
+            </div>
+
+        </div>
+
+        <!-- Regras do Jogo -->
+        <div class="bg-white p-6 sm:p-8 rounded-2xl shadow-lg text-left mt-6">
+             <h2 class="text-2xl font-bold text-slate-900 mb-4">Como Funciona</h2>
+             <p class="text-slate-600 mb-4">Clique nas células para ativá-las ou desativá-las e crie uma configuração inicial. Depois, clique em "Iniciar" para ver a evolução.</p>
+             <ul class="list-disc list-inside space-y-2 text-slate-700">
+                <li>Uma célula viva com menos de dois vizinhos vivos morre (solidão).</li>
+                <li>Uma célula viva com dois ou três vizinhos vivos sobrevive.</li>
+                <li>Uma célula viva com mais de três vizinhos vivos morre (superpopulação).</li>
+                <li>Uma célula morta com exatamente três vizinhos vivos torna-se viva (reprodução).</li>
+             </ul>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Elementos da UI
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            const startButton = document.getElementById('startButton');
+            const stopButton = document.getElementById('stopButton');
+            const resetButton = document.getElementById('resetButton');
+            const randomButton = document.getElementById('randomButton');
+            const generationCounter = document.getElementById('generationCounter');
+
+            // Configurações do Grid
+            let cellSize = 10;
+            let numCols, numRows;
+            let grid, nextGrid;
+            
+            // Estado do Jogo
+            let isRunning = false;
+            let animationFrameId;
+            let generation = 0;
+            
+            const liveCellColor = '#2563eb'; // blue-600
+            const deadCellColor = '#f1f5f9'; // slate-100
+            const gridLineColor = '#cbd5e1'; // slate-300
+
+            // Função para criar um grid 2D
+            function createGrid(rows, cols) {
+                return new Array(rows).fill(null)
+                    .map(() => new Array(cols).fill(0));
+            }
+
+            // Inicializa e redimensiona o canvas e o grid
+            function setup() {
+                const containerWidth = canvas.parentElement.clientWidth;
+                const canvasSize = Math.min(containerWidth, 600); // Limita o tamanho máximo
+                
+                canvas.width = canvasSize;
+                canvas.height = canvasSize;
+
+                numCols = Math.floor(canvas.width / cellSize);
+                numRows = Math.floor(canvas.height / cellSize);
+
+                grid = createGrid(numRows, numCols);
+                nextGrid = createGrid(numRows, numCols);
+                generation = 0;
+                generationCounter.textContent = generation;
+                drawGrid();
+            }
+
+            // Desenha o grid no canvas
+            function drawGrid() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                for (let i = 0; i < numRows; i++) {
+                    for (let j = 0; j < numCols; j++) {
+                        ctx.fillStyle = grid[i][j] ? liveCellColor : deadCellColor;
+                        ctx.fillRect(j * cellSize, i * cellSize, cellSize, cellSize);
+                        // Desenha as linhas do grid
+                        ctx.strokeStyle = gridLineColor;
+                        ctx.strokeRect(j * cellSize, i * cellSize, cellSize, cellSize);
+                    }
+                }
+            }
+            
+            // Preenche o grid com um padrão aleatório
+            function randomizeGrid() {
+                for (let i = 0; i < numRows; i++) {
+                    for (let j = 0; j < numCols; j++) {
+                        grid[i][j] = Math.random() > 0.75 ? 1 : 0; // 25% de chance de uma célula estar viva
+                    }
+                }
+                generation = 0;
+                generationCounter.textContent = generation;
+                drawGrid();
+            }
+
+            // Calcula a próxima geração
+            function computeNextGeneration() {
+                for (let i = 0; i < numRows; i++) {
+                    for (let j = 0; j < numCols; j++) {
+                        const neighbors = countNeighbors(i, j);
+                        const state = grid[i][j];
+                        
+                        // Aplica as regras do Jogo da Vida
+                        if (state === 1 && (neighbors < 2 || neighbors > 3)) {
+                            nextGrid[i][j] = 0; // Morte por solidão ou superpopulação
+                        } else if (state === 0 && neighbors === 3) {
+                            nextGrid[i][j] = 1; // Nascimento por reprodução
+                        } else {
+                            nextGrid[i][j] = state; // Sobrevivência
+                        }
+                    }
+                }
+                // Troca os grids
+                [grid, nextGrid] = [nextGrid, grid];
+            }
+
+            // Conta os vizinhos vivos de uma célula
+            function countNeighbors(row, col) {
+                let count = 0;
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        if (i === 0 && j === 0) continue;
+                        
+                        const x = (row + i + numRows) % numRows;
+                        const y = (col + j + numCols) % numCols;
+                        
+                        count += grid[x][y];
+                    }
+                }
+                return count;
+            }
+
+            // Loop principal do jogo
+            function gameLoop() {
+                if (!isRunning) return;
+
+                computeNextGeneration();
+                drawGrid();
+                generation++;
+                generationCounter.textContent = generation;
+
+                animationFrameId = requestAnimationFrame(gameLoop);
+            }
+
+            // Manipulador de clique no canvas para ativar/desativar células
+            canvas.addEventListener('click', (e) => {
+                if(isRunning) return; // Não permite edição enquanto a simulação está rodando
+
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+
+                const col = Math.floor(x / cellSize);
+                const row = Math.floor(y / cellSize);
+                
+                if(row >= 0 && row < numRows && col >= 0 && col < numCols) {
+                    grid[row][col] = grid[row][col] ? 0 : 1;
+                    drawGrid();
+                }
+            });
+
+            // Controles
+            startButton.addEventListener('click', () => {
+                if (!isRunning) {
+                    isRunning = true;
+                    startButton.disabled = true;
+                    stopButton.disabled = false;
+                    gameLoop();
+                }
+            });
+
+            stopButton.addEventListener('click', () => {
+                if (isRunning) {
+                    isRunning = false;
+                    startButton.disabled = false;
+                    stopButton.disabled = true;
+                    cancelAnimationFrame(animationFrameId);
+                }
+            });
+            stopButton.disabled = true; // Começa desabilitado
+
+            resetButton.addEventListener('click', () => {
+                isRunning = false;
+                startButton.disabled = false;
+                stopButton.disabled = true;
+                cancelAnimationFrame(animationFrameId);
+                setup();
+            });
+            
+            randomButton.addEventListener('click', () => {
+                if (isRunning) return;
+                randomizeGrid();
+            });
+
+            // Inicialização e responsividade
+            window.addEventListener('resize', () => {
+                if(!isRunning) {
+                    setup();
+                }
+            });
+            
+            setup();
+        });
+    </script>
+
 </body>
 </html>
